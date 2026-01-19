@@ -1,0 +1,5 @@
+<Solution>
+    <Project Path="InventoryHub.Api/InventoryHub.Api.csproj" />
+    <Project Path="InventoryHub.Client/InventoryHub.Client.csproj" />
+    <Project Path="InventoryHub.Shared/InventoryHub.Shared.csproj" />
+</Solution>

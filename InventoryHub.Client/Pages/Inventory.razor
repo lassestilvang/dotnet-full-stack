@@ -1,0 +1,291 @@
+@page "/inventory"
+@inject IInventoryService InventoryService
+
+<PageTitle>Inventory Management - InventoryHub</PageTitle>
+
+<div class="inventory-container">
+    <header class="inventory-header">
+        <h1>Inventory Management</h1>
+        <button class="btn btn-primary" @onclick="ShowCreateForm">
+            + Add New Item
+        </button>
+    </header>
+
+    @if (isLoading)
+    {
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Loading inventory...</p>
+        </div>
+    }
+    else if (errorMessage != null)
+    {
+        <div class="error-message">
+            <strong>Error:</strong> @errorMessage
+            <button class="btn btn-secondary" @onclick="LoadInventory">Retry</button>
+        </div>
+    }
+    else
+    {
+        @if (showForm)
+        {
+            <div class="form-overlay" @onclick="HideForm">
+                <div class="item-form" @onclick:stopPropagation>
+                    <h2>@(editingItem == null ? "Create New Item" : "Edit Item")</h2>
+                    <EditForm Model="formModel" OnValidSubmit="HandleSubmit">
+                        <DataAnnotationsValidator />
+                        
+                        <div class="form-group">
+                            <label for="name">Name</label>
+                            <InputText id="name" @bind-Value="formModel.Name" class="form-control" />
+                            <ValidationMessage For="() => formModel.Name" />
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="description">Description</label>
+                            <InputTextArea id="description" @bind-Value="formModel.Description" class="form-control" rows="3" />
+                            <ValidationMessage For="() => formModel.Description" />
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="quantity">Quantity</label>
+                                <InputNumber id="quantity" @bind-Value="formModel.Quantity" class="form-control" />
+                                <ValidationMessage For="() => formModel.Quantity" />
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="price">Price ($)</label>
+                                <InputNumber id="price" @bind-Value="formModel.Price" class="form-control" />
+                                <ValidationMessage For="() => formModel.Price" />
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="category">Category</label>
+                            <InputSelect id="category" @bind-Value="formModel.Category" class="form-control">
+                                <option value="">Select a category</option>
+                                <option value="Electronics">Electronics</option>
+                                <option value="Office Supplies">Office Supplies</option>
+                                <option value="Furniture">Furniture</option>
+                                <option value="Software">Software</option>
+                            </InputSelect>
+                            <ValidationMessage For="() => formModel.Category" />
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                                @(isSubmitting ? "Saving..." : (editingItem == null ? "Create" : "Update"))
+                            </button>
+                            <button type="button" class="btn btn-secondary" @onclick="HideForm">Cancel</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        }
+
+        <div class="inventory-stats">
+            <div class="stat-card">
+                <span class="stat-value">@paginatedData?.TotalCount</span>
+                <span class="stat-label">Total Items</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">@paginatedData?.Items.Sum(i => i.Quantity)</span>
+                <span class="stat-label">Total Stock</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">$@paginatedData?.Items.Sum(i => i.Price * i.Quantity).ToString("N2")</span>
+                <span class="stat-label">Total Value</span>
+            </div>
+        </div>
+
+        <table class="inventory-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Quantity</th>
+                    <th>Price</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (paginatedData?.Items != null)
+                {
+                    @foreach (var item in paginatedData.Items)
+                    {
+                        <tr>
+                            <td>@item.Id</td>
+                            <td>
+                                <strong>@item.Name</strong>
+                                @if (!string.IsNullOrEmpty(item.Description))
+                                {
+                                    <small class="description">@item.Description</small>
+                                }
+                            </td>
+                            <td><span class="category-badge">@item.Category</span></td>
+                            <td class="@(item.Quantity < 10 ? "low-stock" : "")">@item.Quantity</td>
+                            <td>$@item.Price.ToString("N2")</td>
+                            <td>@item.UpdatedAt.ToString("MMM dd, yyyy")</td>
+                            <td class="actions">
+                                <button class="btn btn-edit" @onclick="() => ShowEditForm(item)">Edit</button>
+                                <button class="btn btn-delete" @onclick="() => DeleteItem(item.Id)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+
+        @if (paginatedData != null && paginatedData.TotalPages > 1)
+        {
+            <div class="pagination">
+                <button class="btn btn-page" disabled="@(!paginatedData.HasPreviousPage)" 
+                        @onclick="() => ChangePage(currentPage - 1)">
+                    Previous
+                </button>
+                <span class="page-info">Page @currentPage of @paginatedData.TotalPages</span>
+                <button class="btn btn-page" disabled="@(!paginatedData.HasNextPage)" 
+                        @onclick="() => ChangePage(currentPage + 1)">
+                    Next
+                </button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private PaginatedResponse<InventoryItem>? paginatedData;
+    private bool isLoading = true;
+    private string? errorMessage;
+    private bool showForm = false;
+    private bool isSubmitting = false;
+    private InventoryItem? editingItem;
+    private CreateInventoryItemDto formModel = new();
+    private int currentPage = 1;
+    private const int PageSize = 10;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInventory();
+    }
+
+    private async Task LoadInventory()
+    {
+        isLoading = true;
+        errorMessage = null;
+        
+        try
+        {
+            var response = await InventoryService.GetAllAsync(currentPage, PageSize);
+            
+            if (response?.Success == true && response.Data != null)
+            {
+                paginatedData = response.Data;
+            }
+            else
+            {
+                errorMessage = response?.Message ?? "Failed to load inventory";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Connection error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ShowCreateForm()
+    {
+        editingItem = null;
+        formModel = new CreateInventoryItemDto();
+        showForm = true;
+    }
+
+    private void ShowEditForm(InventoryItem item)
+    {
+        editingItem = item;
+        formModel = new CreateInventoryItemDto
+        {
+            Name = item.Name,
+            Description = item.Description,
+            Quantity = item.Quantity,
+            Price = item.Price,
+            Category = item.Category
+        };
+        showForm = true;
+    }
+
+    private void HideForm()
+    {
+        showForm = false;
+        editingItem = null;
+    }
+
+    private async Task HandleSubmit()
+    {
+        isSubmitting = true;
+        
+        try
+        {
+            if (editingItem == null)
+            {
+                var response = await InventoryService.CreateAsync(formModel);
+                if (response?.Success != true)
+                {
+                    errorMessage = response?.Message;
+                    return;
+                }
+            }
+            else
+            {
+                var updateDto = new UpdateInventoryItemDto
+                {
+                    Name = formModel.Name,
+                    Description = formModel.Description,
+                    Quantity = formModel.Quantity,
+                    Price = formModel.Price,
+                    Category = formModel.Category
+                };
+                var response = await InventoryService.UpdateAsync(editingItem.Id, updateDto);
+                if (response?.Success != true)
+                {
+                    errorMessage = response?.Message;
+                    return;
+                }
+            }
+            
+            HideForm();
+            await LoadInventory();
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task DeleteItem(int id)
+    {
+        var response = await InventoryService.DeleteAsync(id);
+        
+        if (response?.Success == true)
+        {
+            await LoadInventory();
+        }
+        else
+        {
+            errorMessage = response?.Message ?? "Failed to delete item";
+        }
+    }
+
+    private async Task ChangePage(int page)
+    {
+        currentPage = page;
+        await LoadInventory();
+    }
+}

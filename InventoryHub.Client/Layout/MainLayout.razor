@@ -1,0 +1,15 @@
+﻿@inherits LayoutComponentBase
+
+<div class="app-container">
+    <header class="main-header">
+        <NavMenu />
+    </header>
+
+    <main class="main-content">
+        @Body
+    </main>
+
+    <footer class="main-footer">
+        <p>&copy; @DateTime.Now.Year - InventoryHub | Powered by .NET 10 & AI</p>
+    </footer>
+</div>
